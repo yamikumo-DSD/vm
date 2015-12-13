@@ -5,12 +5,12 @@
 #include "constant_pool.h"
 #include <exception>
 #include "debug.h"
+#include "global_def.h"
 
 #pragma warning(disable: 4369)
 
 namespace MyVM
 {
-	using Byte = char;
 	using ByteCode = std::vector<Byte>;
 
 	class StackOverFlow : public std::runtime_error
@@ -23,9 +23,9 @@ namespace MyVM
 	class RepeatableVM
 	{
 	protected:
-		std::vector<Byte> operand_stack;
-		std::vector<Byte>::iterator sp; //A stack pointer.
-		std::vector<Byte> local_variables;
+		std::vector<Word> operand_stack;
+		std::vector<Word>::iterator sp; //A stack pointer.
+		std::vector<Word> local_variables;
 		const ConstantPool& constant_pool;
 		const ByteCode& byte_code;
 		ByteCode::const_iterator pc; //A program counter.
@@ -53,8 +53,8 @@ namespace MyVM
 			ISTORE_1 = 60,           //0x3c: Store int into local variables. pc[0]:ISTORE_1
 			ISTORE_2 = 61,           //0x3d: Store int into local variables. pc[0]:ISTORE_2
 			ISTORE_3 = 62,           //0x3b: Store int into local variables. pc[0]:ISTORE_3
-			FLOAD = 23,              //0x17: Load float from local variables. pc[0]:ILOAD, pc[1]:index
-			FSTORE = 56,             //0x38: Store float into local variables. pc[0]:ISTORE, pc[1]:index
+			FLOAD = 23,              //0x17: Load float from local variables. pc[0]:FLOAD, pc[1]:index
+			FSTORE = 56,             //0x38: Store float into local variables. pc[0]:FSTORE, pc[1]:index
 			IADD = 96,               //0x60: Add int on stack. pc[0]:IADD
 			FADD = 98,               //0x62: Add float on stack. pc[0]:FADD
 			ISUB = 100,              //0x64: Subtract int on stack(value on little address - value on big address). pc[0]:ISUB
@@ -89,7 +89,7 @@ namespace MyVM
 			const std::vector<Byte>& _byte_code
 		);
 		void execute(void);
-		Byte variable(int _index) const;
+		Word variable(int _index) const;
 		virtual void user_extention_0(void) { ++pc; }
 		virtual void user_extention_1(void) { ++pc; }
 		virtual void user_extention_2(void) { ++pc; }

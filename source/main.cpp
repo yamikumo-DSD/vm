@@ -12,22 +12,18 @@ int main(void)
 	{
 		using namespace MyVM;
 		ConstantPool constant_pool;
+		constant_pool.push_back(3);
+		constant_pool.push_back(2.5f);
 		ByteCode byte_code
 		({
-			RepeatableVM::Instruction::ICONST_0,
-			RepeatableVM::Instruction::ISTORE_1,
-			RepeatableVM::Instruction::ILOAD_1,
-			RepeatableVM::Instruction::ICONST_5,
-			RepeatableVM::Instruction::IF_ICMP_GE,
-			0x00,
-			0x0e,
-			RepeatableVM::Instruction::IINC,
+			RepeatableVM::Instruction::LDC,
+			0,
+			RepeatableVM::Instruction::LDC,
 			1,
-			1,
-			RepeatableVM::Instruction::USER_EXTENTION_5,
-			RepeatableVM::Instruction::GOTO,
-			0x00,
-			0x02,
+			RepeatableVM::Instruction::F2I,
+			RepeatableVM::Instruction::ISUB,
+			RepeatableVM::Instruction::ISTORE,
+			0,
 			RepeatableVM::Instruction::EOC
 		});
 		RepeatableVM vm(10, 512, constant_pool, byte_code);
@@ -36,12 +32,7 @@ int main(void)
 			vm.execute();
 		}
 
-		BitCalculation::T2Byte<std::int32_t> result;
-		result.field._0 = vm.variable(1);
-		result.field._1 = 0;
-		result.field._2 = 0;
-		result.field._3 = 0;
-		std::cout << result.t << std::endl;
+		std::cout << BitCalculation::bit_cast<jint>(vm.variable(0)) << std::endl;
 	}
 	catch (const std::exception& _e)
 	{
