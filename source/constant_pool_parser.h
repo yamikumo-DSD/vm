@@ -24,14 +24,23 @@ namespace MyVM
 			qi::rule<Iterator, AST::ConstantPool(void), ascii::blank_type> body;
 			qi::rule<Iterator, AST::Constant(void), ascii::blank_type> constant;
 			qi::rule<Iterator, jbool(void), ascii::blank_type> boolean;
+			qi::rule<Iterator, AST::SymbolicReference, ascii::blank_type> symbolic_ref;
+			qi::rule<Iterator, char(void)> albar;
+			qi::rule<Iterator, std::string(void)> specifier;
 		public:
 			ConstantPoolParser(void) :base_type(body)
 			{
+				albar = qi::alpha | qi::char_('_');
+				specifier = +albar;
 				boolean = qi::lit("true")[qi::_val = true] | qi::lit("false")[qi::_val = false ];
+				symbolic_ref = specifier >> specifier >> qi::char_('(') >> *specifier >> qi::char_(')');
+
 				constant =
-					"Float" >> qi::float_ | 
+					"Float" >> qi::float_ |
 					"Integer" >> qi::int_ |
-					"Boolean" >> boolean;
+					"Boolean" >> boolean |
+					"MethodRef" >> symbolic_ref;
+
 				body =
 					qi::lit("Constant") >> qi::lit("pool") >> qi::lit(':') >> qi::eol >>
 					constant % qi::eol;

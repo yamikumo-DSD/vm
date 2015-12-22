@@ -3,11 +3,10 @@
 #pragma once
 
 #include "global_def.h"
+#include "constant_pool.h"
 
 namespace MyVM
 {
-	class ConstantPool;
-
 	class Frame
 	{
 	private:
@@ -25,5 +24,9 @@ namespace MyVM
 		void advance_sp(int _n);
 		auto get_sp(void) const { return sp; }
 		Word& operator[](std::size_t _offset);
+		const Word& operator[](std::size_t _offset) const;
+		Word top(void) const;
+		DWord top2(void) const;
+		void dump_stack(void) ; //to stdout
 	};
 }

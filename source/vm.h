@@ -5,6 +5,9 @@
 #include "constant_pool.h"
 #include "debug.h"
 #include "global_def.h"
+#include "frame.h"
+#include <stack>
+#include "code_list.h"
 
 #pragma warning(disable: 4369)
 
@@ -14,17 +17,15 @@ namespace MyVM
 	{
 	private:
 		std::vector<Word>::iterator sp; //A stack pointer.
+		bool continue_flag;
 	protected:
-		std::vector<Word> operand_stack;
-		std::vector<Word> local_variables;
+		std::stack<Frame> frame_stack;
 		const ConstantPool& constant_pool;
 		const ByteCode& byte_code;
 		ByteCode::const_iterator pc; //A program counter.
-		bool continue_flag;
-		void advance_sp(int _n);
 		void advance_pc(unsigned int _n);
-		auto get_sp(void) const { return sp; }
 		auto get_pc(void) const { return pc; }
+		CodeList code_list;
 	public:
 		enum Instruction : Byte //Original java code and extended code.
 		{
@@ -104,6 +105,7 @@ namespace MyVM
 			NOP = 0,                 //0x00: Do nothing. pc[0]:NOP.
 			POP = 87,                //0x57: Pop the top operand stack value. The pop instruction must not be used unless value is a value of a category 1 computational type. pc[0]:POP
 			SWAP = 95,               //0x5f: Swap the top two values on the operand stack.The swap instruction must not be used unless value1 and value2 are both values of a category 1 computational type. pc[0]:SWAP
+			INVOKE_STATIC = 184,     //0xb8: Invoke a method. pc[0]:INVOKE_STATIC, pc[1]:indexbyte1, pc[2]:indexbyte2
 		};
 		RepeatableVM
 		(

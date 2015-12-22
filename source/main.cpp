@@ -21,37 +21,37 @@ class CVM : public MyVM::RepeatableVM
 		using RepeatableVM::RepeatableVM;
 		virtual void user_extention_0(void) override final
 		{
-			advance_sp(-1);
-			std::cout << std::endl << "SUMMON_MOB instruction called at count=" << *get_sp() << '.' << std::endl;
+			frame_stack.top().advance_sp(-1);
+			std::cout << std::endl << "SUMMON_MOB instruction called at count=" << *frame_stack.top().get_sp() << '.' << std::endl;
 			std::printf("Mob's type: %x\n", get_pc()[1]);
 			std::printf("Behavior type of it: %x\n", get_pc()[2]);
 			std::cout << std::endl;
-			*get_sp() = MyVM::BitCalculation::bit_cast<MyVM::Word>(id++);
-			advance_sp(1);
+			*frame_stack.top().get_sp() = MyVM::BitCalculation::bit_cast<MyVM::Word>(id++);
+			frame_stack.top().advance_sp(1);
 			advance_pc(3);
 		}
 		virtual void user_extention_1(void) override final
 		{
-			advance_sp(-1);
-			std::cout << std::endl << "SUMMON_BOSS instruction called at count=" << *get_sp() << '.' << std::endl;
+			frame_stack.top().advance_sp(-1);
+			std::cout << std::endl << "SUMMON_BOSS instruction called at count=" << *frame_stack.top().get_sp() << '.' << std::endl;
 			std::printf("Boss's type: %x\n", get_pc()[1]);
 			std::cout << std::endl;
 			advance_pc(2);
 		}
 		virtual void user_extention_5(void) override final
 		{
-			*get_sp() = MyVM::BitCalculation::bit_cast<MyVM::Word>(count);
-			advance_sp(1);
+			*frame_stack.top().get_sp() = MyVM::BitCalculation::bit_cast<MyVM::Word>(count);
+			frame_stack.top().advance_sp(1);
 			advance_pc(1);
 		}
 		virtual void user_extention_2(void) override final
 		{
 			using namespace MyVM;
 			using namespace BitCalculation;
-			advance_sp(-1);
+			frame_stack.top().advance_sp(-1);
 			id_map.insert
 			({
-				static_cast<jint>(bit_cast<jchar>(*get_sp())), 
+				static_cast<jint>(bit_cast<jchar>(*frame_stack.top().get_sp())), 
 				static_cast<jint>(bit_cast<jchar>(get_pc()[1]))
 			});
 			advance_pc(2);

@@ -19,36 +19,16 @@ MyVM::RepeatableVM::RepeatableVM
 	const ConstantPool& _constant_pool,
 	const std::vector<Byte>& _byte_code
 )
-	:local_variables(_size_of_local_variables),
-	constant_pool(_constant_pool),
+	: constant_pool(_constant_pool),
 	byte_code(_byte_code),
 	pc(),
-	operand_stack(_reserved_stack_size + 1),
 	sp(),
-	continue_flag(true)
+	continue_flag(true),
+	frame_stack(),
+	code_list()
 {
+	frame_stack.push(Frame(10, 10, _constant_pool));
 	pc = byte_code.begin();
-	sp = operand_stack.begin();
-}
-
-void MyVM::RepeatableVM::advance_sp(int _n)
-{
-	if (_n > 0)
-	{
-		for (int i = 0; i != _n; ++i)
-		{
-			if (sp == operand_stack.end()) { throw StackOverFlow("Exception StackOverFlow is thrown."); }
-			++sp;
-		}
-	}
-	else if (_n < 0)
-	{
-		for (int i = 0; i != -_n; ++i)
-		{
-			if (sp == operand_stack.begin()) { throw StackUnderFlow("Exception StackUnderFlow is thrown."); }
-			--sp;
-		}
-	}
 }
 
 void MyVM::RepeatableVM::advance_pc(unsigned int _n)
@@ -70,20 +50,12 @@ void MyVM::RepeatableVM::execute(void)
 #ifdef DUMP_CODE
 			//Dump code
 			std::cout << "*********** Dump code ***********" << std::endl;
-			std::printf("Instruction code: %x\n", *pc);
+			std::printf("Instruction code: %x\n", *get_pc());
 			std::cout << "**********************************" << std::endl;
 #endif
 #ifdef DUMP_STACK
 			//Dump stack
-			std::cout << "*********** Dump stack ***********" << std::endl;
-			int i = 0;
-			for (const jint& x : operand_stack)
-			{
-				std::printf("%x", x); if (i == std::distance(operand_stack.begin(), sp)) { std::cout << "<-sp"; }
-				std::cout << std::endl;
-				++i;
-			}
-			std::cout << "**********************************" << std::endl;
+			frame_stack.top().dump_stack();
 #endif
 			switch (*get_pc())
 			{
@@ -111,27 +83,27 @@ void MyVM::RepeatableVM::execute(void)
 						if (type == typeid(jint))
 						{
 							auto val = get<jint>(constant_pool[get_pc()[1]]);
-							*get_sp() = BitCalculation::bit_cast<Word>(val);
-							advance_sp(1);
+							*frame_stack.top().get_sp() = BitCalculation::bit_cast<Word>(val);
+							frame_stack.top().advance_sp(1);
 						}
 						else if (type == typeid(float))
 						{
 							auto val = get<float>(constant_pool[get_pc()[1]]);
-							*get_sp() = BitCalculation::bit_cast<Word>(val);
-							advance_sp(1);
+							*frame_stack.top().get_sp() = BitCalculation::bit_cast<Word>(val);
+							frame_stack.top().advance_sp(1);
 						}
 					}
 					advance_pc(2);
 					break;
 				case Instruction::ILOAD:
-					*get_sp() = local_variables[get_pc()[1]];
-					advance_sp(1);
+					*frame_stack.top().get_sp() = frame_stack.top()[get_pc()[1]];
+					frame_stack.top().advance_sp(1);
 					advance_pc(2);
 					break;
 #ifndef STATIC_ILOAD
 #define STATIC_ILOAD(N) \
-					*get_sp() = local_variables[N];\
-					advance_sp(1);\
+					*frame_stack.top().get_sp() = frame_stack.top()[N];\
+					frame_stack.top().advance_sp(1);\
 					advance_pc(1);\
 					break;
 				case Instruction::ILOAD_0:
@@ -146,8 +118,8 @@ void MyVM::RepeatableVM::execute(void)
 #endif
 #ifndef STATIC_FLOAD
 #define STATIC_FLOAD(N) \
-					*get_sp() = local_variables[N];\
-					advance_sp(1);\
+					*frame_stack.top().get_sp() = frame_stack.top()[N];\
+					frame_stack.top().advance_sp(1);\
 					advance_pc(1);\
 					break;
 				case Instruction::FLOAD_0:
@@ -161,14 +133,14 @@ void MyVM::RepeatableVM::execute(void)
 #undef STATIC_FLOAD
 #endif
 				case Instruction::ISTORE:
-					advance_sp(-1);
-					local_variables[get_pc()[1]] = *get_sp();
+					frame_stack.top().advance_sp(-1);
+					frame_stack.top()[get_pc()[1]] = *frame_stack.top().get_sp();
 					advance_pc(2);
 					break;
 #ifndef STATIC_ISTORE
 #define STATIC_ISTORE(N) \
-					advance_sp(-1);\
-					local_variables[N] = *get_sp();\
+					frame_stack.top().advance_sp(-1);\
+					frame_stack.top()[N] = *frame_stack.top().get_sp();\
 					advance_pc(1);\
 					break;
 				case Instruction::ISTORE_0:
@@ -182,19 +154,19 @@ void MyVM::RepeatableVM::execute(void)
 #undef STATIC_ITORE
 #endif
 				case Instruction::FLOAD:
-					*get_sp() = local_variables[get_pc()[1]];
-					advance_sp(1);
+					*frame_stack.top().get_sp() = frame_stack.top()[get_pc()[1]];
+					frame_stack.top().advance_sp(1);
 					advance_pc(2);
 					break;
 				case Instruction::FSTORE:
-					advance_sp(-1);
-					local_variables[get_pc()[1]] = *get_sp();
+					frame_stack.top().advance_sp(-1);
+					frame_stack.top()[get_pc()[1]] = *frame_stack.top().get_sp();
 					advance_pc(2);
 					break;
 #ifndef STATIC_FSTORE
 #define STATIC_FSTORE(N) \
-					advance_sp(-1);\
-					local_variables[N] = *get_sp();\
+					frame_stack.top().advance_sp(-1);\
+					frame_stack.top()[N] = *frame_stack.top().get_sp();\
 					advance_pc(1);\
 					break;
 				case Instruction::FSTORE_0:
@@ -210,11 +182,11 @@ void MyVM::RepeatableVM::execute(void)
 #ifndef MATHEMATICAL_BINARY_OPERATOR_WORD_SIZE
 #define MATHEMATICAL_BINARY_OPERATOR_WORD_SIZE(op, FourByteType) \
 				{ \
-					advance_sp(-1); \
-					auto value1 = BitCalculation::bit_cast<FourByteType>(get_sp()[-1]); \
-					auto value2 = BitCalculation::bit_cast<FourByteType>(get_sp()[0]); \
+					frame_stack.top().advance_sp(-1); \
+					auto value1 = BitCalculation::bit_cast<FourByteType>(frame_stack.top().get_sp()[-1]); \
+					auto value2 = BitCalculation::bit_cast<FourByteType>(frame_stack.top().get_sp()[0]); \
 					auto result = value1 op value2; \
-					get_sp()[-1] = BitCalculation::bit_cast<Word>(result); \
+					frame_stack.top().get_sp()[-1] = BitCalculation::bit_cast<Word>(result); \
 					advance_pc(1); \
 					break; \
 				}
@@ -242,31 +214,31 @@ void MyVM::RepeatableVM::execute(void)
 #endif
 				case Instruction::I2F:
 				{
-					auto value = BitCalculation::bit_cast<jint>(get_sp()[-1]);
+					auto value = BitCalculation::bit_cast<jint>(frame_stack.top().get_sp()[-1]);
 					auto result = static_cast<jfloat>(value);
-					get_sp()[-1] = BitCalculation::bit_cast<Word>(result);
+					frame_stack.top().get_sp()[-1] = BitCalculation::bit_cast<Word>(result);
 					advance_pc(1);
 					break;
 				}
 				case Instruction::F2I:
 				{
-					auto value = BitCalculation::bit_cast<jfloat>(get_sp()[-1]);
+					auto value = BitCalculation::bit_cast<jfloat>(frame_stack.top().get_sp()[-1]);
 					auto result = static_cast<jint>(value);
-					get_sp()[-1] = BitCalculation::bit_cast<Word>(result);
+					frame_stack.top().get_sp()[-1] = BitCalculation::bit_cast<Word>(result);
 					advance_pc(1);
 					break;
 				}
 				case Instruction::INEG:
 				{
-					auto value = BitCalculation::bit_cast<jint>(get_sp()[-1]);
-					get_sp()[-1] = BitCalculation::bit_cast<Word>(-value);
+					auto value = BitCalculation::bit_cast<jint>(frame_stack.top().get_sp()[-1]);
+					frame_stack.top().get_sp()[-1] = BitCalculation::bit_cast<Word>(-value);
 					advance_pc(1);
 					break;
 				}
 				case Instruction::FNEG:
 				{
-					auto value = BitCalculation::bit_cast<jfloat>(get_sp()[-1]);
-					get_sp()[-1] = BitCalculation::bit_cast<Word>(-value);
+					auto value = BitCalculation::bit_cast<jfloat>(frame_stack.top().get_sp()[-1]);
+					frame_stack.top().get_sp()[-1] = BitCalculation::bit_cast<Word>(-value);
 					advance_pc(1);
 					break;
 				}
@@ -293,9 +265,9 @@ void MyVM::RepeatableVM::execute(void)
 #ifndef IF_ICMP_IMPLEMENT
 #define IF_ICMP_IMPLEMENT(op)\
 				{\
-					advance_sp(-2);\
-					auto value1 = BitCalculation::bit_cast<jint>(get_sp()[0]);\
-					auto value2 = BitCalculation::bit_cast<jint>(get_sp()[1]);\
+					frame_stack.top().advance_sp(-2);\
+					auto value1 = BitCalculation::bit_cast<jint>(frame_stack.top().get_sp()[0]);\
+					auto value2 = BitCalculation::bit_cast<jint>(frame_stack.top().get_sp()[1]);\
 					BitCalculation::T2Byte<Short> branch;\
 					branch.field._0 = get_pc()[2];\
 					branch.field._1 = get_pc()[1];\
@@ -320,8 +292,8 @@ void MyVM::RepeatableVM::execute(void)
 #ifndef IF_IMPLEMENT
 #define IF_IMPLEMENT(op)\
 				{\
-					advance_sp(-1);\
-					auto value = BitCalculation::bit_cast<jint>(*get_sp());\
+					frame_stack.top().advance_sp(-1);\
+					auto value = BitCalculation::bit_cast<jint>(*frame_stack.top().get_sp());\
 					static constexpr jint zero = 0;\
 					BitCalculation::T2Byte<Short> branch;\
 					branch.field._0 = get_pc()[2];\
@@ -347,11 +319,11 @@ void MyVM::RepeatableVM::execute(void)
 #ifndef FCMP_IMPLEMENT
 #define FCMP_IMPLEMENT(cmp) \
 				{ \
-					advance_sp(-1); \
-					auto value1 = BitCalculation::bit_cast<jfloat>(get_sp()[-1]); \
-					auto value2 = BitCalculation::bit_cast<jfloat>(get_sp()[0]); \
+					frame_stack.top().advance_sp(-1); \
+					auto value1 = BitCalculation::bit_cast<jfloat>(frame_stack.top().get_sp()[-1]); \
+					auto value2 = BitCalculation::bit_cast<jfloat>(frame_stack.top().get_sp()[0]); \
 					jint result = (value1 cmp value2) ? 1 : 0; \
-					get_sp()[-1] = BitCalculation::bit_cast<jint>(result); \
+					frame_stack.top().get_sp()[-1] = BitCalculation::bit_cast<jint>(result); \
 					advance_pc(1); \
 					break; \
 				}
@@ -364,16 +336,16 @@ void MyVM::RepeatableVM::execute(void)
 				case Instruction::IINC:
 					{
 						auto const_ = BitCalculation::bit_cast<jchar>(get_pc()[2]); //const is signed byte.
-						auto result = BitCalculation::bit_cast<jint>(local_variables[get_pc()[1]]) + static_cast<jint>(const_); //const is signed-extended to int
-						local_variables[get_pc()[1]] = BitCalculation::bit_cast<Word>(result);
+						auto result = BitCalculation::bit_cast<jint>(frame_stack.top()[get_pc()[1]]) + static_cast<jint>(const_); //const is signed-extended to int
+						frame_stack.top()[get_pc()[1]] = BitCalculation::bit_cast<Word>(result);
 						advance_pc(3);
 						break;
 					}
 #ifndef ICONST_IMPLE
 #define ICONST_IMPLE(N)\
 					{\
-						*get_sp() = BitCalculation::bit_cast<Word>(N);\
-						advance_sp(1);\
+						*frame_stack.top().get_sp() = BitCalculation::bit_cast<Word>(N);\
+						frame_stack.top().advance_sp(1);\
 						advance_pc(1); \
 						break;\
 					}
@@ -396,8 +368,8 @@ void MyVM::RepeatableVM::execute(void)
 #ifndef FCONST_IMPLE
 #define FCONST_IMPLE(N)\
 					{\
-						*get_sp() = BitCalculation::bit_cast<Word>(static_cast<jfloat>(N));\
-						advance_sp(1);\
+						*frame_stack.top().get_sp() = BitCalculation::bit_cast<Word>(static_cast<jfloat>(N));\
+						frame_stack.top().advance_sp(1);\
 						advance_pc(1); \
 						break;\
 					}
@@ -412,8 +384,8 @@ void MyVM::RepeatableVM::execute(void)
 				case Instruction::BIPUSH: 
 					{
 						auto immediate_byte = BitCalculation::bit_cast<jchar>(get_pc()[1]);
-						*get_sp() = BitCalculation::bit_cast<Word>(static_cast<jint>(immediate_byte));
-						advance_sp(1);
+						*frame_stack.top().get_sp() = BitCalculation::bit_cast<Word>(static_cast<jint>(immediate_byte));
+						frame_stack.top().advance_sp(1);
 						advance_pc(2);
 						break;
 					}
@@ -422,8 +394,8 @@ void MyVM::RepeatableVM::execute(void)
 						BitCalculation::T2Byte<jshort> intermediate_value;
 						intermediate_value.field._1 = get_pc()[1];
 						intermediate_value.field._0 = get_pc()[2];
-						*get_sp() = BitCalculation::bit_cast<Word>(static_cast<jint>(intermediate_value.t));
-						advance_sp(1);
+						*frame_stack.top().get_sp() = BitCalculation::bit_cast<Word>(static_cast<jint>(intermediate_value.t));
+						frame_stack.top().advance_sp(1);
 						advance_pc(3);
 						break;
 					}
@@ -431,13 +403,23 @@ void MyVM::RepeatableVM::execute(void)
 					advance_pc(1);
 					break;
 				case Instruction::POP:
-					advance_sp(-1);
+					frame_stack.top().advance_sp(-1);
 					advance_pc(1);
 					break;
 				case Instruction::SWAP:
-					std::swap(get_sp()[-1], get_sp()[-2]);
+					std::swap(frame_stack.top().get_sp()[-1], frame_stack.top().get_sp()[-2]);
 					advance_pc(1);
 					break;
+				case Instruction::INVOKE_STATIC:
+					{
+						BitCalculation::T2Byte<Short> index;
+						index.field._1 = get_pc()[1];
+						index.field._2 = get_pc()[2];
+						pc = code_list[get<SymbolicReference>(constant_pool[index.t]).method_name].begin();
+						//frame_stack.push(Frame(10, 10, ));
+						break;
+						//NOW BEING STRUCTED!
+					}
 				default:
 					throw InvalidInstruction("Exception InvalidInstruction is thrown.");
 					break;
@@ -456,5 +438,5 @@ void MyVM::RepeatableVM::execute(void)
 }
 
 
-MyVM::Word MyVM::RepeatableVM::variable(int _index) const { return local_variables[_index]; }
+MyVM::Word MyVM::RepeatableVM::variable(int _index) const { return frame_stack.top()[_index]; }
 
