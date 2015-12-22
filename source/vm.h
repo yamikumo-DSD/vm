@@ -3,7 +3,6 @@
 #pragma once
 
 #include "constant_pool.h"
-#include <exception>
 #include "debug.h"
 #include "global_def.h"
 
@@ -11,25 +10,21 @@
 
 namespace MyVM
 {
-	using ByteCode = std::vector<Byte>;
-
-	class StackOverFlow : public std::runtime_error
-	{
-	public:
-		using std::runtime_error::runtime_error;
-		~StackOverFlow(void) {}
-	};
-
 	class RepeatableVM
 	{
+	private:
+		std::vector<Word>::iterator sp; //A stack pointer.
 	protected:
 		std::vector<Word> operand_stack;
-		std::vector<Word>::iterator sp; //A stack pointer.
 		std::vector<Word> local_variables;
 		const ConstantPool& constant_pool;
 		const ByteCode& byte_code;
 		ByteCode::const_iterator pc; //A program counter.
 		bool continue_flag;
+		void advance_sp(int _n);
+		void advance_pc(unsigned int _n);
+		auto get_sp(void) const { return sp; }
+		auto get_pc(void) const { return pc; }
 	public:
 		enum Instruction : Byte //Original java code and extended code.
 		{
@@ -54,13 +49,31 @@ namespace MyVM
 			ISTORE_2 = 61,           //0x3d: Store int into local variables. pc[0]:ISTORE_2
 			ISTORE_3 = 62,           //0x3b: Store int into local variables. pc[0]:ISTORE_3
 			FLOAD = 23,              //0x17: Load float from local variables. pc[0]:FLOAD, pc[1]:index
+			FLOAD_0 = 34,            //0x22: Load float from local variables. pc[0]:FLOAD_0
+			FLOAD_1 = 35,            //0x23: Load float from local variables. pc[0]:FLOAD_1
+			FLOAD_2 = 36,            //0x24: Load float from local variables. pc[0]:FLOAD_2
+			FLOAD_3 = 37,            //0x25: Load float from local variables. pc[0]:FLOAD_3
 			FSTORE = 56,             //0x38: Store float into local variables. pc[0]:FSTORE, pc[1]:index
+			FSTORE_0 = 67,           //0x43: Store float into local variables. pc[0]:FSTORE_0
+			FSTORE_1 = 68,           //0x44: Store float into local variables. pc[0]:FSTORE_1
+			FSTORE_2 = 69,           //0x45: Store float into local variables. pc[0]:FSTORE_2
+			FSTORE_3 = 70,           //0x46: Store float into local variables. pc[0]:FSTORE_3
 			IADD = 96,               //0x60: Add int on stack. pc[0]:IADD
 			FADD = 98,               //0x62: Add float on stack. pc[0]:FADD
 			ISUB = 100,              //0x64: Subtract int on stack(value on little address - value on big address). pc[0]:ISUB
 			FSUB = 102,              //0x66: Subtract float on stack(value on little address - value on big address). pc[0]:FSUB
+			IDIV = 108,              //0x6c: Divide int on stack(value on little address - value on big address). pc[0]:IDIV
+			FDIV = 110,              //0x6e: Divide float on stack(value on little address - value on big address). pc[0]:FDIV
+			IMUL = 104,              //0x68: Multiply int on stack(value on little address - value on big address). pc[0]:IDIV
+			FMUL = 106,              //0x6a: Multiply float on stack(value on little address - value on big address). pc[0]:FMUL
+			FCMPG = 150,             //0x96: Compare float. pc[0]:FCMPG
+			FCMPL = 149,             //0x95: Compare float. pc[0]:FCMPL
+			IREM = 112,              //0x70: Remainder int on stack(value on little address - value on big address). pc[0]:IREM
+			FREM = 114,              //0x72: Remainder float on stack(value on little address - value on big address). pc[0]:FREM
 			I2F = 134,               //0x86: Convert int to float on stack. pc[0]:I2F
 			F2I = 139,               //0x8b: Convert float to int on stack. pc[0]:F2I
+			INEG = 116,              //0x74: Negate int. pc[0]:INEG
+			FNEG = 118,              //0x76: Negate float. pc[0]:FNEG
 			GOTO = 167,              //0xa7: Branch always. pc[0]:GOTO, pc[1]:branchbyte1, pc[2]:branchbyte2
 			GOTO_W = 200,            //0xc8: Branch always. pc[0]:GOTO_@, pc[1]:branchbyte1, pc[2]:branchbyte2, pc[3]:branchbyte3, pc[4]:branchbyte4 
 			IF_ICMP_EQ = 159,        //0x9f: Branch if int comparison succeeds. pc[0]:IF_ICMP_EQ, pc[1]:branchbyte1, pc[2]:branchbyte2
@@ -69,6 +82,12 @@ namespace MyVM
 			IF_ICMP_GE = 162,        //0xa2: Branch if int comparison succeeds. pc[0]:IF_ICMP_GE, pc[1]:branchbyte1, pc[2]:branchbyte2
 			IF_ICMP_GT = 163,        //0xa3: Branch if int comparison succeeds. pc[0]:IF_ICMP_GT, pc[1]:branchbyte1, pc[2]:branchbyte2
 			IF_ICMP_LE = 164,        //0xa4: Branch if int comparison succeeds. pc[0]:IF_ICMP_LE, pc[1]:branchbyte1, pc[2]:branchbyte2
+			IF_EQ = 153,             //0x99: Branch if int comparison with zero succeeds. pc[0]:IF_EQ, pc[1]:branchbyte1, pc[2]:branchbyte2
+			IF_NE = 154,             //0x9a: Branch if int comparison with zero succeeds. pc[0]:IF_NE, pc[1]:branchbyte1, pc[2]:branchbyte2
+			IF_LT = 155,             //0x9b: Branch if int comparison with zero succeeds. pc[0]:IF_LT, pc[1]:branchbyte1, pc[2]:branchbyte2
+			IF_GE = 156,             //0x9c: Branch if int comparison with zero succeeds. pc[0]:IF_GE, pc[1]:branchbyte1, pc[2]:branchbyte2
+			IF_GT = 157,             //0x9d: Branch if int comparison with zero succeeds. pc[0]:IF_GT, pc[1]:branchbyte1, pc[2]:branchbyte2
+			IF_LE = 158,             //0x9e: Branch if int comparison with zero succeeds. pc[0]:IF_LE, pc[1]:branchbyte1, pc[2]:branchbyte2
 			IINC = 132,              //0x84: Increment local variable by constant. pc[0]:IINC, pc[1]:index, pc[2]:const
 			ICONST_M1 = 2,           //0x02: Push int constant. pc[0]:ICONST_M1
 			ICONST_0 = 3,            //0x03: Push int constant. pc[0]:ICONST_0
@@ -77,9 +96,14 @@ namespace MyVM
 			ICONST_3 = 6,            //0x06: Push int constant. pc[0]:ICONST_3
 			ICONST_4 = 7,            //0x07: Push int constant. pc[0]:ICONST_4
 			ICONST_5 = 8,            //0x08: Push int constant. pc[0]:ICONST_5
+			FCONST_0 = 11,           //0x0b: Push 0.0 as float constant. pc[0]:FCONST_0
+			FCONST_1 = 12,           //0x0c: Push 1.0 as float constant. pc[0]:FCONST_1
+			FCONST_2 = 13,           //0x0d: Push 2.0 as float constant. pc[0]:FCONST_2
 			BIPUSH = 16,             //0x10: Push byte as sign-extended int value. pc[0]:BIPUSH, pc[1]:byte
 			SIPUSH = 17,             //0x11: Push short. pc[0]:SIPUSH, pc[1]:byte1, pc[2]:byte2
-
+			NOP = 0,                 //0x00: Do nothing. pc[0]:NOP.
+			POP = 87,                //0x57: Pop the top operand stack value. The pop instruction must not be used unless value is a value of a category 1 computational type. pc[0]:POP
+			SWAP = 95,               //0x5f: Swap the top two values on the operand stack.The swap instruction must not be used unless value1 and value2 are both values of a category 1 computational type. pc[0]:SWAP
 		};
 		RepeatableVM
 		(
@@ -95,7 +119,7 @@ namespace MyVM
 		virtual void user_extention_2(void) { ++pc; }
 		virtual void user_extention_3(void) { ++pc; }
 		virtual void user_extention_4(void) { ++pc; }
-		virtual void user_extention_5(void) { std::cout << "extention5" << std::endl; ++pc; }
-		~RepeatableVM(void){}
+		virtual void user_extention_5(void) { ++pc; }
+		virtual ~RepeatableVM(void){}
 	};
 }

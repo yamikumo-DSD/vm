@@ -10,7 +10,7 @@ namespace MyVM
 {
 	namespace BitCalculation
 	{
-		using Byte = char;
+		using Byte = unsigned char; //CAUTION! Type changed from signed char to unsigned char.
 
 		enum class Endian
 		{

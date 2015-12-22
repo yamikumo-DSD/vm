@@ -5,6 +5,12 @@
 #include <cstdlib>
 #include "debug.h"
 #include "bit_calculation.h"
+#include "exception_def.h"
+
+#define DUMP_STACK
+#undef DUMP_STACK
+#define DUMP_CODE
+#undef DUMP_CODE
 
 MyVM::RepeatableVM::RepeatableVM
 (
@@ -25,13 +31,61 @@ MyVM::RepeatableVM::RepeatableVM
 	sp = operand_stack.begin();
 }
 
+void MyVM::RepeatableVM::advance_sp(int _n)
+{
+	if (_n > 0)
+	{
+		for (int i = 0; i != _n; ++i)
+		{
+			if (sp == operand_stack.end()) { throw StackOverFlow("Exception StackOverFlow is thrown."); }
+			++sp;
+		}
+	}
+	else if (_n < 0)
+	{
+		for (int i = 0; i != -_n; ++i)
+		{
+			if (sp == operand_stack.begin()) { throw StackUnderFlow("Exception StackUnderFlow is thrown."); }
+			--sp;
+		}
+	}
+}
+
+void MyVM::RepeatableVM::advance_pc(unsigned int _n)
+{
+	for (unsigned int i = 0; i != _n; ++i)
+	{
+		if (pc == byte_code.end()) { throw ByteCodeOverRun("Exception ByteCodeOverRun is thrown."); }
+		++pc;
+	}
+}
+
+
 void MyVM::RepeatableVM::execute(void)
 {
 	if (continue_flag)
 	{
-		while (*pc != Instruction::EOC && *pc != Instruction::NEXT_FRAME)
+		while (*get_pc() != Instruction::EOC && *get_pc() != Instruction::NEXT_FRAME)
 		{
-			switch (*pc)
+#ifdef DUMP_CODE
+			//Dump code
+			std::cout << "*********** Dump code ***********" << std::endl;
+			std::printf("Instruction code: %x\n", *pc);
+			std::cout << "**********************************" << std::endl;
+#endif
+#ifdef DUMP_STACK
+			//Dump stack
+			std::cout << "*********** Dump stack ***********" << std::endl;
+			int i = 0;
+			for (const jint& x : operand_stack)
+			{
+				std::printf("%x", x); if (i == std::distance(operand_stack.begin(), sp)) { std::cout << "<-sp"; }
+				std::cout << std::endl;
+				++i;
+			}
+			std::cout << "**********************************" << std::endl;
+#endif
+			switch (*get_pc())
 			{
 				case Instruction::USER_EXTENTION_0:
 					user_extention_0();
@@ -53,45 +107,33 @@ void MyVM::RepeatableVM::execute(void)
 					break;
 				case Instruction::LDC: 
 					{
-						std::type_index type = constant_pool[pc[1]].type();
+						std::type_index type = constant_pool[get_pc()[1]].type();
 						if (type == typeid(jint))
 						{
-							auto val = get<jint>(constant_pool[pc[1]]);
-							*sp++ = BitCalculation::bit_cast<Word>(val);
-							//for (int i = 0; i != sizeof(jint) / sizeof(Byte); ++i)
-							//{
-							//	*sp++ = BitCalculation::get_byte(val, 0);
-							//	val >>= 8;
-							//}
+							auto val = get<jint>(constant_pool[get_pc()[1]]);
+							*get_sp() = BitCalculation::bit_cast<Word>(val);
+							advance_sp(1);
 						}
 						else if (type == typeid(float))
 						{
-							auto val = get<float>(constant_pool[pc[1]]);
-							*sp++ = BitCalculation::bit_cast<Word>(val);
-							//for (int i = 0; i != sizeof(float) / sizeof(Byte); ++i)
-							//{
-							//	*sp++ = BitCalculation::get_byte(val, 0);
-							//	auto temp = BitCalculation::bit_cast<int>(val);
-							//	temp >>= 8;
-							//	val = BitCalculation::bit_cast<float>(temp);
-							//}
+							auto val = get<float>(constant_pool[get_pc()[1]]);
+							*get_sp() = BitCalculation::bit_cast<Word>(val);
+							advance_sp(1);
 						}
 					}
-					pc += 2;
+					advance_pc(2);
 					break;
 				case Instruction::ILOAD:
-					*sp++ = local_variables[pc[1]];
-					//for (int i = 0; i != sizeof(jint) / sizeof(Byte); ++i)
-					//{
-					//	*sp++ = local_variables[pc[1] + i];
-					//}
-					pc += 2;
+					*get_sp() = local_variables[get_pc()[1]];
+					advance_sp(1);
+					advance_pc(2);
 					break;
 #ifndef STATIC_ILOAD
 #define STATIC_ILOAD(N) \
-					*sp++ = local_variables[N];\
-					++pc;\
-					break; //Revised
+					*get_sp() = local_variables[N];\
+					advance_sp(1);\
+					advance_pc(1);\
+					break;
 				case Instruction::ILOAD_0:
 					STATIC_ILOAD(0)
 				case Instruction::ILOAD_1:
@@ -102,20 +144,33 @@ void MyVM::RepeatableVM::execute(void)
 					STATIC_ILOAD(3)
 #undef STATIC_ILOAD
 #endif
+#ifndef STATIC_FLOAD
+#define STATIC_FLOAD(N) \
+					*get_sp() = local_variables[N];\
+					advance_sp(1);\
+					advance_pc(1);\
+					break;
+				case Instruction::FLOAD_0:
+					STATIC_FLOAD(0)
+				case Instruction::FLOAD_1:
+					STATIC_FLOAD(1)
+				case Instruction::FLOAD_2:
+					STATIC_FLOAD(2)
+				case Instruction::FLOAD_3:
+					STATIC_FLOAD(3)
+#undef STATIC_FLOAD
+#endif
 				case Instruction::ISTORE:
-					local_variables[pc[1]] = *--sp;
-					//sp -= 4;
-					//for (int i = 0; i != sizeof(jint) / sizeof(Byte); ++i)
-					//{
-					//	local_variables[pc[1] + i] = sp[i];
-					//}
-					pc += 2;
+					advance_sp(-1);
+					local_variables[get_pc()[1]] = *get_sp();
+					advance_pc(2);
 					break;
 #ifndef STATIC_ISTORE
 #define STATIC_ISTORE(N) \
-					local_variables[N] = *--sp;\
-					++pc;\
-					break; // Revised.
+					advance_sp(-1);\
+					local_variables[N] = *get_sp();\
+					advance_pc(1);\
+					break;
 				case Instruction::ISTORE_0:
 					STATIC_ISTORE(0)
 				case Instruction::ISTORE_1:
@@ -127,378 +182,125 @@ void MyVM::RepeatableVM::execute(void)
 #undef STATIC_ITORE
 #endif
 				case Instruction::FLOAD:
-					*sp++ = local_variables[pc[1]];
-					//for (int i = 0; i != sizeof(float) / sizeof(Byte); ++i)
-					//{
-					//	*sp++ = local_variables[pc[1] + i];
-					//}
-					pc += 2;
+					*get_sp() = local_variables[get_pc()[1]];
+					advance_sp(1);
+					advance_pc(2);
 					break;
 				case Instruction::FSTORE:
-					local_variables[pc[1]] = *--sp;
-					//sp -= 4;
-					//for (int i = 0; i != sizeof(float) / sizeof(Byte); ++i)
-					//{
-					//	local_variables[pc[1] + i] = sp[i];
-					//}
-					pc += 2;
+					advance_sp(-1);
+					local_variables[get_pc()[1]] = *get_sp();
+					advance_pc(2);
 					break;
+#ifndef STATIC_FSTORE
+#define STATIC_FSTORE(N) \
+					advance_sp(-1);\
+					local_variables[N] = *get_sp();\
+					advance_pc(1);\
+					break;
+				case Instruction::FSTORE_0:
+					STATIC_ISTORE(0)
+				case Instruction::FSTORE_1:
+					STATIC_ISTORE(1)
+				case Instruction::FSTORE_2:
+					STATIC_ISTORE(2)
+				case Instruction::FSTORE_3:
+					STATIC_ISTORE(3)
+#undef STATIC_FTORE
+#endif
+#ifndef MATHEMATICAL_BINARY_OPERATOR_WORD_SIZE
+#define MATHEMATICAL_BINARY_OPERATOR_WORD_SIZE(op, FourByteType) \
+				{ \
+					advance_sp(-1); \
+					auto value1 = BitCalculation::bit_cast<FourByteType>(get_sp()[-1]); \
+					auto value2 = BitCalculation::bit_cast<FourByteType>(get_sp()[0]); \
+					auto result = value1 op value2; \
+					get_sp()[-1] = BitCalculation::bit_cast<Word>(result); \
+					advance_pc(1); \
+					break; \
+				}
 				case Instruction::IADD:
-				{
-					--sp;
-					auto value1 = BitCalculation::bit_cast<jint>(sp[-1]);
-					auto value2 = BitCalculation::bit_cast<jint>(sp[0]);
-					auto result = value1 + value2;
-					sp[-1] = BitCalculation::bit_cast<Word>(result);
-
-					//BitCalculation::T2Byte<jint> value1(0), value2(0), result(0);
-					//const auto size = sizeof(jint) / sizeof(Byte);
-					//if (BitCalculation::endian_judge() == BitCalculation::Endian::LITTLE)
-					//{
-					//	value1.field._0 = *(sp - size - 4);
-					//	value1.field._1 = *(sp - size - 3);
-					//	value1.field._2 = *(sp - size - 2);
-					//	value1.field._3 = *(sp - size - 1);
-
-					//	value2.field._0 = *(sp - 4);
-					//	value2.field._1 = *(sp - 3);
-					//	value2.field._2 = *(sp - 2);
-					//	value2.field._3 = *(sp - 1);
-
-					//	result.t = value1.t + value2.t;
-
-					//	*(sp - size - 4) = result.field._0;
-					//	*(sp - size - 3) = result.field._1;
-					//	*(sp - size - 2) = result.field._2;
-					//	*(sp - size - 1) = result.field._3;
-
-					//	sp -= size;
-					//}
-					//else
-					//{
-					//	value1.field._0 = *(sp - size - 1);
-					//	value1.field._1 = *(sp - size - 2);
-					//	value1.field._2 = *(sp - size - 3);
-					//	value1.field._3 = *(sp - size - 4);
-
-					//	value2.field._0 = *(sp - 1);
-					//	value2.field._1 = *(sp - 2);
-					//	value2.field._2 = *(sp - 3);
-					//	value2.field._3 = *(sp - 4);
-
-					//	result.t = value1.t + value2.t;
-
-					//	*(sp - size - 1) = result.field._0;
-					//	*(sp - size - 2) = result.field._1;
-					//	*(sp - size - 3) = result.field._2;
-					//	*(sp - size - 4) = result.field._3;
-
-					//	sp -= size;
-					//}
-				}
-					++pc;
-					break;
+					MATHEMATICAL_BINARY_OPERATOR_WORD_SIZE(+, jint)
 				case Instruction::FADD:
-				{
-					--sp;
-					auto value1 = BitCalculation::bit_cast<jfloat>(sp[-1]);
-					auto value2 = BitCalculation::bit_cast<jfloat>(sp[0]);
-					auto result = value1 + value2;
-					sp[-1] = BitCalculation::bit_cast<Word>(result);
-
-					//BitCalculation::T2Byte<float> value1(0), value2(0), result(0);
-					//const auto size = sizeof(float) / sizeof(Byte);
-					//if (BitCalculation::endian_judge() == BitCalculation::Endian::LITTLE)
-					//{
-					//	value1.field._0 = *(sp - size - 4);
-					//	value1.field._1 = *(sp - size - 3);
-					//	value1.field._2 = *(sp - size - 2);
-					//	value1.field._3 = *(sp - size - 1);
-
-					//	value2.field._0 = *(sp - 4);
-					//	value2.field._1 = *(sp - 3);
-					//	value2.field._2 = *(sp - 2);
-					//	value2.field._3 = *(sp - 1);
-
-					//	result.t = value1.t + value2.t;
-
-					//	*(sp - size - 4) = result.field._0;
-					//	*(sp - size - 3) = result.field._1;
-					//	*(sp - size - 2) = result.field._2;
-					//	*(sp - size - 1) = result.field._3;
-
-					//	sp -= size;
-					//}
-					//else
-					//{
-					//	value1.field._0 = *(sp - size - 1);
-					//	value1.field._1 = *(sp - size - 2);
-					//	value1.field._2 = *(sp - size - 3);
-					//	value1.field._3 = *(sp - size - 4);
-
-					//	value2.field._0 = *(sp - 1);
-					//	value2.field._1 = *(sp - 2);
-					//	value2.field._2 = *(sp - 3);
-					//	value2.field._3 = *(sp - 4);
-
-					//	result.t = value1.t + value2.t;
-
-					//	*(sp - size - 1) = result.field._0;
-					//	*(sp - size - 2) = result.field._1;
-					//	*(sp - size - 3) = result.field._2;
-					//	*(sp - size - 4) = result.field._3;
-
-					//	sp -= size;
-					//}
-				}
-					++pc;
-					break;
+					MATHEMATICAL_BINARY_OPERATOR_WORD_SIZE(+, jfloat)
 				case Instruction::ISUB:
-				{
-					--sp;
-					auto value1 = BitCalculation::bit_cast<jint>(sp[-1]);
-					auto value2 = BitCalculation::bit_cast<jint>(sp[0]);
-					auto result = value1 - value2;
-					sp[-1] = BitCalculation::bit_cast<Word>(result);
-
-					//BitCalculation::T2Byte<jint> value1(0), value2(0), result(0);
-					//const auto size = sizeof(jint) / sizeof(Byte);
-					//if (BitCalculation::endian_judge() == BitCalculation::Endian::LITTLE)
-					//{
-					//	value1.field._0 = *(sp - size - 4);
-					//	value1.field._1 = *(sp - size - 3);
-					//	value1.field._2 = *(sp - size - 2);
-					//	value1.field._3 = *(sp - size - 1);
-
-					//	value2.field._0 = *(sp - 4);
-					//	value2.field._1 = *(sp - 3);
-					//	value2.field._2 = *(sp - 2);
-					//	value2.field._3 = *(sp - 1);
-
-					//	result.t = value1.t - value2.t;
-
-					//	*(sp - size - 4) = result.field._0;
-					//	*(sp - size - 3) = result.field._1;
-					//	*(sp - size - 2) = result.field._2;
-					//	*(sp - size - 1) = result.field._3;
-
-					//	sp -= size;
-					//}
-					//else
-					//{
-					//	value1.field._0 = *(sp - size - 1);
-					//	value1.field._1 = *(sp - size - 2);
-					//	value1.field._2 = *(sp - size - 3);
-					//	value1.field._3 = *(sp - size - 4);
-
-					//	value2.field._0 = *(sp - 1);
-					//	value2.field._1 = *(sp - 2);
-					//	value2.field._2 = *(sp - 3);
-					//	value2.field._3 = *(sp - 4);
-
-					//	result.t = value1.t + value2.t;
-
-					//	*(sp - size - 1) = result.field._0;
-					//	*(sp - size - 2) = result.field._1;
-					//	*(sp - size - 3) = result.field._2;
-					//	*(sp - size - 4) = result.field._3;
-
-					//	sp -= size;
-					//}
-				}
-					++pc;
-					break;
+					MATHEMATICAL_BINARY_OPERATOR_WORD_SIZE(-, jint)
 				case Instruction::FSUB:
-				{
-					--sp;
-					auto value1 = BitCalculation::bit_cast<jfloat>(sp[-1]);
-					auto value2 = BitCalculation::bit_cast<jfloat>(sp[0]);
-					auto result = value1 - value2;
-					sp[-1] = BitCalculation::bit_cast<Word>(result);
-
-					//BitCalculation::T2Byte<float> value1(0), value2(0), result(0);
-					//const auto size = sizeof(float) / sizeof(Byte);
-					//if (BitCalculation::endian_judge() == BitCalculation::Endian::LITTLE)
-					//{
-					//	value1.field._0 = *(sp - size - 4);
-					//	value1.field._1 = *(sp - size - 3);
-					//	value1.field._2 = *(sp - size - 2);
-					//	value1.field._3 = *(sp - size - 1);
-
-					//	value2.field._0 = *(sp - 4);
-					//	value2.field._1 = *(sp - 3);
-					//	value2.field._2 = *(sp - 2);
-					//	value2.field._3 = *(sp - 1);
-
-					//	result.t = value1.t - value2.t;
-
-					//	*(sp - size - 4) = result.field._0;
-					//	*(sp - size - 3) = result.field._1;
-					//	*(sp - size - 2) = result.field._2;
-					//	*(sp - size - 1) = result.field._3;
-
-					//	sp -= size;
-					//}
-					//else
-					//{
-					//	value1.field._0 = *(sp - size - 1);
-					//	value1.field._1 = *(sp - size - 2);
-					//	value1.field._2 = *(sp - size - 3);
-					//	value1.field._3 = *(sp - size - 4);
-
-					//	value2.field._0 = *(sp - 1);
-					//	value2.field._1 = *(sp - 2);
-					//	value2.field._2 = *(sp - 3);
-					//	value2.field._3 = *(sp - 4);
-
-					//	result.t = value1.t + value2.t;
-
-					//	*(sp - size - 1) = result.field._0;
-					//	*(sp - size - 2) = result.field._1;
-					//	*(sp - size - 3) = result.field._2;
-					//	*(sp - size - 4) = result.field._3;
-
-					//	sp -= size;
-					//}
-				}
-					++pc;
-					break;
+					MATHEMATICAL_BINARY_OPERATOR_WORD_SIZE(-, jfloat)
+				case Instruction::IDIV:
+					MATHEMATICAL_BINARY_OPERATOR_WORD_SIZE(/, jint)
+				case Instruction::FDIV:
+					MATHEMATICAL_BINARY_OPERATOR_WORD_SIZE(/, jfloat)
+				case Instruction::IMUL:
+					MATHEMATICAL_BINARY_OPERATOR_WORD_SIZE(*, jint)
+				case Instruction::FMUL:
+					MATHEMATICAL_BINARY_OPERATOR_WORD_SIZE(*, jfloat)
+				case Instruction::IREM:
+					MATHEMATICAL_BINARY_OPERATOR_WORD_SIZE(%, jint)
+				case Instruction::FREM:
+					throw std::runtime_error("FREM instruction hasn't implemented yet.");
+#undef MATHEMATICAL_BINARY_OPERATOR_WORD_SIZE
+#endif
 				case Instruction::I2F:
 				{
-					auto value = BitCalculation::bit_cast<jint>(sp[-1]);
+					auto value = BitCalculation::bit_cast<jint>(get_sp()[-1]);
 					auto result = static_cast<jfloat>(value);
-					sp[-1] = BitCalculation::bit_cast<Word>(result);
-					//BitCalculation::T2Byte<jint> value;
-					//BitCalculation::T2Byte<float> result;
-					//if (BitCalculation::endian_judge() == BitCalculation::Endian::LITTLE)
-					//{
-					//	value.field._0 = *(sp - 4);
-					//	value.field._1 = *(sp - 3);
-					//	value.field._2 = *(sp - 2);
-					//	value.field._3 = *(sp - 1);
-
-					//	result.t = static_cast<float>(value.t);
-
-					//	*(sp - 4) = result.field._0;
-					//	*(sp - 3) = result.field._1;
-					//	*(sp - 2) = result.field._2;
-					//	*(sp - 1) = result.field._3;
-					//}
-					//else
-					//{
-					//	value.field._0 = *(sp - 1);
-					//	value.field._1 = *(sp - 2);
-					//	value.field._2 = *(sp - 3);
-					//	value.field._3 = *(sp - 4);
-
-					//	result.t = static_cast<float>(value.t);
-
-					//	*(sp - 1) = result.field._0;
-					//	*(sp - 2) = result.field._1;
-					//	*(sp - 3) = result.field._2;
-					//	*(sp - 4) = result.field._3;
-					//}
-				}
-					++pc;
+					get_sp()[-1] = BitCalculation::bit_cast<Word>(result);
+					advance_pc(1);
 					break;
+				}
 				case Instruction::F2I:
 				{
-					auto value = BitCalculation::bit_cast<jfloat>(sp[-1]);
+					auto value = BitCalculation::bit_cast<jfloat>(get_sp()[-1]);
 					auto result = static_cast<jint>(value);
-					sp[-1] = BitCalculation::bit_cast<Word>(result);
-					//BitCalculation::T2Byte<float> value;
-					//BitCalculation::T2Byte<jint> result;
-					//if (BitCalculation::endian_judge() == BitCalculation::Endian::LITTLE)
-					//{
-					//	value.field._0 = *(sp - 4);
-					//	value.field._1 = *(sp - 3);
-					//	value.field._2 = *(sp - 2);
-					//	value.field._3 = *(sp - 1);
-
-					//	//This palagraph needs revision to follow IEEE754 rounding rules.
-					//	result.t = static_cast<jint>(value.t);
-
-					//	*(sp - 4) = result.field._0;
-					//	*(sp - 3) = result.field._1;
-					//	*(sp - 2) = result.field._2;
-					//	*(sp - 1) = result.field._3;
-					//}
-					//else
-					//{
-					//	value.field._0 = *(sp - 1);
-					//	value.field._1 = *(sp - 2);
-					//	value.field._2 = *(sp - 3);
-					//	value.field._3 = *(sp - 4);
-
-					//	//This palagraph needs revision to follow IEEE754 rounding rules.
-					//	result.t = static_cast<jint>(value.t);
-
-					//	*(sp - 1) = result.field._0;
-					//	*(sp - 2) = result.field._1;
-					//	*(sp - 3) = result.field._2;
-					//	*(sp - 4) = result.field._3;
-					//}
-				}
-					++pc;
+					get_sp()[-1] = BitCalculation::bit_cast<Word>(result);
+					advance_pc(1);
 					break;
+				}
+				case Instruction::INEG:
+				{
+					auto value = BitCalculation::bit_cast<jint>(get_sp()[-1]);
+					get_sp()[-1] = BitCalculation::bit_cast<Word>(-value);
+					advance_pc(1);
+					break;
+				}
+				case Instruction::FNEG:
+				{
+					auto value = BitCalculation::bit_cast<jfloat>(get_sp()[-1]);
+					get_sp()[-1] = BitCalculation::bit_cast<Word>(-value);
+					advance_pc(1);
+					break;
+				}
 				case Instruction::GOTO:
 				{
 					//Destination address(16bit). Branchoffset is (branchbyte1 << 8) | branchbyte2.
-					BitCalculation::T2Byte<std::int16_t> branch;
-					branch.field._0 = pc[2]; //branchbyte2
-					branch.field._1 = pc[1]; //branchbyte1
+					BitCalculation::T2Byte<Short> branch;
+					branch.field._0 = get_pc()[2]; //branchbyte2
+					branch.field._1 = get_pc()[1]; //branchbyte1
 					pc = byte_code.begin() + branch.t;
 					break;
 				}
 				case Instruction::GOTO_W:
 				{
 					//Destination address(32bit). Branchoffset is (branchbyte1 << 24) | (branchbyte2 << 16) | (branchbyte3 << 8) | branchbyte4.
-					BitCalculation::T2Byte<jint> branch;
-					branch.field._0 = pc[4]; //branchbyte2
-					branch.field._1 = pc[3]; //branchbyte1
-					branch.field._2 = pc[2]; //branchbyte1
-					branch.field._3 = pc[1]; //branchbyte1
+					BitCalculation::T2Byte<Word> branch;
+					branch.field._0 = get_pc()[4]; //branchbyte2
+					branch.field._1 = get_pc()[3]; //branchbyte1
+					branch.field._2 = get_pc()[2]; //branchbyte1
+					branch.field._3 = get_pc()[1]; //branchbyte1
 					pc = byte_code.begin() + branch.t;
 					break;
 				}
 #ifndef IF_ICMP_IMPLEMENT
 #define IF_ICMP_IMPLEMENT(op)\
 				{\
-					BitCalculation::T2Byte<jint> value1, value2;\
-					static constexpr auto size = sizeof(jint) / sizeof(Byte);\
-					if (BitCalculation::endian_judge() == BitCalculation::Endian::LITTLE)\
-					{\
-						value1.field._0 = *(sp - size - 4);\
-						value1.field._1 = *(sp - size - 3);\
-						value1.field._2 = *(sp - size - 2);\
-						value1.field._3 = *(sp - size - 1);\
-\
-						value2.field._0 = *(sp - 4);\
-						value2.field._1 = *(sp - 3);\
-						value2.field._2 = *(sp - 2);\
-						value2.field._3 = *(sp - 1);\
-\
-						sp -= 2 * size;\
-					}\
-					else\
-					{\
-						value1.field._0 = *(sp - size - 1);\
-						value1.field._1 = *(sp - size - 2);\
-						value1.field._2 = *(sp - size - 3);\
-						value1.field._3 = *(sp - size - 4);\
-\
-						value2.field._0 = *(sp - 1);\
-						value2.field._1 = *(sp - 2);\
-						value2.field._2 = *(sp - 3);\
-						value2.field._3 = *(sp - 4);\
-\
-						sp -= 2 * size;\
-					}\
-					BitCalculation::T2Byte<std::int16_t> branch;\
-					branch.field._0 = pc[2];\
-					branch.field._1 = pc[1];\
-					if(value1.t op value2.t){pc = byte_code.begin() + branch.t;} \
-					else{pc += 3;}\
+					advance_sp(-2);\
+					auto value1 = BitCalculation::bit_cast<jint>(get_sp()[0]);\
+					auto value2 = BitCalculation::bit_cast<jint>(get_sp()[1]);\
+					BitCalculation::T2Byte<Short> branch;\
+					branch.field._0 = get_pc()[2];\
+					branch.field._1 = get_pc()[1];\
+					if (value1 op value2) { pc = byte_code.begin() + branch.t; }\
+					else { advance_pc(3);}\
 					break;\
 				}
 				case Instruction::IF_ICMP_EQ:
@@ -512,73 +314,69 @@ void MyVM::RepeatableVM::execute(void)
 				case Instruction::IF_ICMP_GT:
 					IF_ICMP_IMPLEMENT(>)
 				case Instruction::IF_ICMP_LE:
-					IF_ICMP_IMPLEMENT(<=)
+					IF_ICMP_IMPLEMENT(<= )
 #undef IF_ICMP_IMPLEMENT
 #endif
+#ifndef IF_IMPLEMENT
+#define IF_IMPLEMENT(op)\
+				{\
+					advance_sp(-1);\
+					auto value = BitCalculation::bit_cast<jint>(*get_sp());\
+					static constexpr jint zero = 0;\
+					BitCalculation::T2Byte<Short> branch;\
+					branch.field._0 = get_pc()[2];\
+					branch.field._1 = get_pc()[1];\
+					if (value op zero) { pc = byte_code.begin() + branch.t; }\
+					else {advance_pc(3);}\
+					break;\
+				}
+				case Instruction::IF_EQ:
+					IF_IMPLEMENT(==)
+				case Instruction::IF_NE:
+					IF_IMPLEMENT(!=)
+				case Instruction::IF_LT:
+					IF_IMPLEMENT(<)
+				case Instruction::IF_GE:
+					IF_IMPLEMENT(>=)
+				case Instruction::IF_GT:
+					IF_IMPLEMENT(>)
+				case Instruction::IF_LE:
+					IF_IMPLEMENT(<= )
+#undef IF_IMPLEMENT
+#endif
+#ifndef FCMP_IMPLEMENT
+#define FCMP_IMPLEMENT(cmp) \
+				{ \
+					advance_sp(-1); \
+					auto value1 = BitCalculation::bit_cast<jfloat>(get_sp()[-1]); \
+					auto value2 = BitCalculation::bit_cast<jfloat>(get_sp()[0]); \
+					jint result = (value1 cmp value2) ? 1 : 0; \
+					get_sp()[-1] = BitCalculation::bit_cast<jint>(result); \
+					advance_pc(1); \
+					break; \
+				}
+				case Instruction::FCMPG:
+					FCMP_IMPLEMENT(>)
+				case Instruction::FCMPL:
+					FCMP_IMPLEMENT(<)
+#undef FCMP_IMPLEMENT
+#endif
 				case Instruction::IINC:
-					// -------------------------------------- //
-					// REVISION OF THIS SECTION NOW ONGOING!! //
-					// -------------------------------------- // 
 					{
-						BitCalculation::T2Byte<jint> temp;
-						if (BitCalculation::endian_judge() == BitCalculation::Endian::LITTLE)
-						{
-							temp.field._3 = local_variables[pc[1] + 3];
-							temp.field._2 = local_variables[pc[1] + 2];
-							temp.field._1 = local_variables[pc[1] + 1];
-							temp.field._0 = local_variables[pc[1] + 0];
-
-							auto constant = static_cast<jint>(pc[2]);
-							temp.t += constant;
-
-							local_variables[pc[1] + 3] = temp.field._3;
-							local_variables[pc[1] + 2] = temp.field._2;
-							local_variables[pc[1] + 1] = temp.field._1;
-							local_variables[pc[1] + 0] = temp.field._0;
-						}
-						else
-						{
-							temp.field._0 = local_variables[pc[1] + 3];
-							temp.field._1 = local_variables[pc[1] + 2];
-							temp.field._2 = local_variables[pc[1] + 1];
-							temp.field._3 = local_variables[pc[1] + 0];
-
-							auto constant = static_cast<jint>(pc[2]);
-							temp.t += constant;
-
-							local_variables[pc[1] + 3] = temp.field._0;
-							local_variables[pc[1] + 2] = temp.field._1;
-							local_variables[pc[1] + 1] = temp.field._2;
-							local_variables[pc[1] + 0] = temp.field._3;
-						}
-
+						auto const_ = BitCalculation::bit_cast<jchar>(get_pc()[2]); //const is signed byte.
+						auto result = BitCalculation::bit_cast<jint>(local_variables[get_pc()[1]]) + static_cast<jint>(const_); //const is signed-extended to int
+						local_variables[get_pc()[1]] = BitCalculation::bit_cast<Word>(result);
+						advance_pc(3);
+						break;
 					}
-					pc += 3;
-					break;
 #ifndef ICONST_IMPLE
 #define ICONST_IMPLE(N)\
 					{\
-						BitCalculation::T2Byte<jint> i;\
-						i.t = N;\
-						if (BitCalculation::endian_judge() == BitCalculation::Endian::LITTLE)\
-						{\
-							sp[0] = i.field._0;\
-							sp[1] = i.field._1;\
-							sp[2] = i.field._2;\
-							sp[3] = i.field._3;\
-						}\
-						else\
-						{\
-							sp[3] = i.field._0;\
-							sp[2] = i.field._1;\
-							sp[1] = i.field._2;\
-							sp[0] = i.field._3;\
-						}\
-\
-					}\
-					sp += sizeof(jint);\
-					++pc;\
-					break;
+						*get_sp() = BitCalculation::bit_cast<Word>(N);\
+						advance_sp(1);\
+						advance_pc(1); \
+						break;\
+					}
 				case Instruction::ICONST_M1:
 					ICONST_IMPLE(-1)
 				case Instruction::ICONST_0:
@@ -595,72 +393,66 @@ void MyVM::RepeatableVM::execute(void)
 					ICONST_IMPLE(5)
 #undef ICONST_IMPLE
 #endif
+#ifndef FCONST_IMPLE
+#define FCONST_IMPLE(N)\
+					{\
+						*get_sp() = BitCalculation::bit_cast<Word>(static_cast<jfloat>(N));\
+						advance_sp(1);\
+						advance_pc(1); \
+						break;\
+					}
+				case Instruction::FCONST_0:
+					FCONST_IMPLE(0)
+				case Instruction::FCONST_1:
+					FCONST_IMPLE(1)
+				case Instruction::FCONST_2:
+					FCONST_IMPLE(2)
+#undef FCONST_IMPLE
+#endif
 				case Instruction::BIPUSH: 
 					{
-						BitCalculation::T2Byte<jint> i;
-						i.t = static_cast<jint>(pc[1]);
-
-						if (BitCalculation::endian_judge() == BitCalculation::Endian::LITTLE)
-						{
-							sp[0] = i.field._0;
-							sp[1] = i.field._1;
-							sp[2] = i.field._2;
-							sp[3] = i.field._3;
-						}
-						else
-						{
-							sp[3] = i.field._0;
-							sp[2] = i.field._1;
-							sp[1] = i.field._2;
-							sp[0] = i.field._3;
-						}
+						auto immediate_byte = BitCalculation::bit_cast<jchar>(get_pc()[1]);
+						*get_sp() = BitCalculation::bit_cast<Word>(static_cast<jint>(immediate_byte));
+						advance_sp(1);
+						advance_pc(2);
+						break;
 					}
-					sp += sizeof(jint);
-					pc += 2;
-					break;
 				case Instruction::SIPUSH: 
 					{
-						BitCalculation::T2Byte<std::int16_t> intermediate_short;
-						BitCalculation::T2Byte<jint> i;
-						if (BitCalculation::endian_judge() == BitCalculation::Endian::LITTLE)
-						{
-							intermediate_short.field._1 = pc[1];
-							intermediate_short.field._0 = pc[2];
-							i.t = static_cast<jint>(intermediate_short.t);
-							sp[0] = i.field._0;
-							sp[1] = i.field._1;
-							sp[2] = i.field._2;
-							sp[3] = i.field._3;
-						}
-						else
-						{
-							intermediate_short.field._0 = pc[1];
-							intermediate_short.field._1 = pc[2];
-							i.t = static_cast<jint>(intermediate_short.t);
-							sp[3] = i.field._0;
-							sp[2] = i.field._1;
-							sp[1] = i.field._2;
-							sp[0] = i.field._3;
-						}
+						BitCalculation::T2Byte<jshort> intermediate_value;
+						intermediate_value.field._1 = get_pc()[1];
+						intermediate_value.field._0 = get_pc()[2];
+						*get_sp() = BitCalculation::bit_cast<Word>(static_cast<jint>(intermediate_value.t));
+						advance_sp(1);
+						advance_pc(3);
+						break;
 					}
-					sp += sizeof(jint);
-					pc += 3;
+				case Instruction::NOP:
+					advance_pc(1);
+					break;
+				case Instruction::POP:
+					advance_sp(-1);
+					advance_pc(1);
+					break;
+				case Instruction::SWAP:
+					std::swap(get_sp()[-1], get_sp()[-2]);
+					advance_pc(1);
 					break;
 				default:
+					throw InvalidInstruction("Exception InvalidInstruction is thrown.");
 					break;
 				}
 			}
 	
-		if (*pc == Instruction::NEXT_FRAME)
+		if (*get_pc() == Instruction::NEXT_FRAME)
 		{
-			++pc;
+			advance_pc(1);
 		}
-		else if (*pc == Instruction::EOC)
+		else if (*get_pc() == Instruction::EOC)
 		{
 			continue_flag = false;
 		}
 	}
-	if (sp == operand_stack.end()) { throw StackOverFlow("Stack over flow."); }
 }
 
 
